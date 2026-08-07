@@ -33,7 +33,6 @@ from lerobot.utils.constants import DEFAULT_FEATURES, HF_LEROBOT_HOME, HF_LEROBO
 from lerobot.utils.feature_utils import _validate_feature_names
 from lerobot.utils.utils import flatten_dict
 
-from .compute_stats import aggregate_stats
 from .depth_utils import MM_PER_METRE
 from .feature_utils import create_empty_dataset_info
 from .io_utils import (
@@ -660,6 +659,8 @@ class LeRobotDatasetMetadata:
             episode_metadata: Additional metadata (chunk/file indices, frame
                 ranges, video timestamps, etc.).
         """
+        from .compute_stats import aggregate_stats
+
         episode_dict = {
             "episode_index": episode_index,
             "tasks": episode_tasks,

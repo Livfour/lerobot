@@ -12,19 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Public API for lerobot configuration types and base config classes.
-
-NOTE: TrainPipelineConfig, EvalPipelineConfig, and TrainRLServerPipelineConfig
-are intentionally NOT re-exported here to avoid circular dependencies
-(they import lerobot.envs and lerobot.policies at module level).
-Import them directly: ``from lerobot.configs.train import TrainPipelineConfig``
-"""
-
-from .dataset import DatasetRecordConfig
-from .default import DatasetConfig, EvalConfig, JobConfig, PeftConfig, WandBConfig
-from .policies import PreTrainedConfig
-from .recipe import MessageTurn, TrainingRecipe, load_recipe
 from .types import (
     FeatureType,
     NormalizationMode,
@@ -54,17 +41,6 @@ __all__ = [
     "PipelineFeatureType",
     "PolicyFeature",
     "RTCAttentionSchedule",
-    # Config classes
-    "DatasetRecordConfig",
-    "DatasetConfig",
-    "EvalConfig",
-    "JobConfig",
-    "MessageTurn",
-    "PeftConfig",
-    "PreTrainedConfig",
-    "TrainingRecipe",
-    "WandBConfig",
-    "load_recipe",
     "VideoEncoderConfig",
     "RGBEncoderConfig",
     "DepthEncoderConfig",

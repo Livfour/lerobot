@@ -29,7 +29,7 @@ version = "0.6.1"
 description = "🤗 LeRobot: State-of-the-art Machine Learning for Real-World Robotics in Pytorch"
 dynamic = ["readme"]
 license = { text = "Apache-2.0" }
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 authors = [
     { name = "Rémi Cadène", email = "re.cadene@gmail.com" },
     { name = "Simon Alibert", email = "alibert.sim@gmail.com" },
@@ -50,6 +50,7 @@ classifiers = [
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Build Tools",
@@ -58,42 +59,26 @@ classifiers = [
 keywords = ["lerobot", "huggingface", "robotics",  "machine learning", "artificial intelligence"]
 
 dependencies = [
-    # Core ML
     "torch>=2.7,<2.12.0",
     "torchvision>=0.22.0,<0.27.0",
-    "numpy>=2.0.0,<2.3.0", # NOTE: Explicitly listing numpy helps the resolver converge faster. Upper bound imposed by opencv-python-headless.
-    "opencv-python-headless>=4.9.0,<4.14.0",
+    "numpy>=1.26.0,<2.3.0",
     "Pillow>=10.0.0,<13.0.0",
-    "einops>=0.8.0,<0.9.0",
-
-    # Config & Hub
-    "draccus>=0.11.6,<0.12.0",
-    "huggingface-hub>=1.6.0,<2.0.0",
+    "huggingface-hub>=1.5.0,<2.0.0",
     "requests>=2.32.0,<3.0.0",
-
-    # Environments
-    # NOTE: gymnasium is used in lerobot.envs (lerobot-train, lerobot-eval), policies/factory,
-    # and robots/unitree. Moving it to an optional extra would require import guards across many
-    # tightly-coupled modules. Candidate for a future refactor to decouple envs from the core.
-    "gymnasium>=1.1.1,<2.0.0",
-
-    # Serialization & checkpointing
-    "safetensors>=0.4.3,<1.0.0",
-
-    # Lightweight utilities
     "packaging>=24.2,<26.0",
-    "termcolor>=2.4.0,<4.0.0",
-    "tqdm>=4.66.0,<5.0.0",
-
-    # Build tools (required by opencv-python-headless on some platforms)
-    "cmake>=3.29.0.1,<4.2.0",
-    "setuptools>=71.0.0,<82.0.0",  # torch 2.11 requires setuptools<82; a higher cap makes the resolver downgrade torch
+    "datasets>=4.0.0,<4.7.0",
+    "pandas>=2.0.0,<3.0.0",
+    "pyarrow>=18.0.0,<19.0.0",
+    "av>=15.0.0,<16.0.0",
+    "fsspec>=2023.1.0",
 ]
 
-# Optional dependencies
 [project.optional-dependencies]
+torchcodec = ["torchcodec>=0.3.0,<0.12.0"]
+test = ["pytest>=8.1.0,<10.0.0"]
 
-# ── Feature-scoped extras ──────────────────────────────────
+# Retained only as upstream reference; these entries are not package extras.
+[tool.lerobot-upstream-optional-dependencies]
 dataset = [
     "datasets>=4.8.0,<5.0.0",
     "pandas>=2.0.0,<3.0.0", # NOTE: Transitive dependency of datasets
@@ -338,7 +323,7 @@ all = [
     # "lerobot[unitree_g1]", TODO: Unitree requires specific installation instructions for unitree_sdk2
 ]
 
-[project.scripts]
+[tool.lerobot-upstream-scripts]
 lerobot-calibrate="lerobot.scripts.lerobot_calibrate:main"
 lerobot-find-cameras="lerobot.scripts.lerobot_find_cameras:main"
 lerobot-find-port="lerobot.scripts.lerobot_find_port:main"
@@ -380,7 +365,7 @@ lerobot = ["envs/*.json", "annotations/steerable_pipeline/prompts/*.txt"]
 where = ["src"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 110
 exclude = ["tests/artifacts/**/*.safetensors", "*_pb2.py", "*_pb2_grpc.py"]
 
@@ -407,6 +392,7 @@ ignore = [
     "T201", # Print statement found
     "T203", # Pprint statement found
     "B008", # Perform function call in argument defaults
+    "UP042", # Preserve upstream str + Enum string behavior on Python 3.11.
 ]
 
 [tool.ruff.lint.per-file-ignores]

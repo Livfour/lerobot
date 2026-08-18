@@ -58,3 +58,28 @@ def test_distribution_has_no_unrelated_runtime_dependencies():
         "transformers",
     )
     assert not any(req.lower().startswith(forbidden) for req in requirements)
+
+
+def test_distribution_does_not_expose_non_data_modules():
+    modules = (
+        "lerobot.envs",
+        "lerobot.motors",
+        "lerobot.policies",
+        "lerobot.processor",
+        "lerobot.robots",
+        "lerobot.scripts.lerobot_train",
+        "lerobot.datasets.factory",
+        "lerobot.datasets.streaming_dataset",
+    )
+    source = (
+        "import importlib.util,json; "
+        f"modules={modules!r}; "
+        "print(json.dumps({name: importlib.util.find_spec(name) is not None for name in modules}))"
+    )
+    assert _probe(source) == dict.fromkeys(modules, False)
+
+
+def test_v21_to_v30_converter_remains_importable():
+    from lerobot.scripts.convert_dataset_v21_to_v30 import convert_dataset
+
+    assert callable(convert_dataset)

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import torch
+from datasets import Dataset
 from fixture_contract import (
     ACTION_DIM,
     EPISODE_LENGTHS,
@@ -14,6 +15,7 @@ from fixture_contract import (
 )
 
 from lerobot.datasets import LeRobotDataset
+from lerobot.datasets.compute_stats import compute_relative_action_stats
 from lerobot.datasets.io_utils import load_info
 
 REPO_ID = "vlaforge/data-only-v30-fixture"
@@ -118,3 +120,22 @@ def test_invalid_delta_timestamp_is_rejected(fixture_root: Path) -> None:
 def test_missing_local_metadata_raises_file_not_found(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load_info(tmp_path)
+
+
+def test_relative_action_stats_do_not_require_training_processors() -> None:
+    rows = Dataset.from_dict(
+        {
+            "action": [[1.0, 10.0], [2.0, 20.0], [5.0, 30.0], [7.0, 40.0]],
+            "observation.state": [[0.5, 100.0], [1.0, 100.0], [4.0, 100.0], [6.0, 100.0]],
+            "episode_index": [0, 0, 1, 1],
+        }
+    )
+    stats = compute_relative_action_stats(
+        rows,
+        features={"action": {"shape": [2], "names": ["arm_joint", "gripper"]}},
+        chunk_size=2,
+        exclude_joints=["gripper"],
+    )
+
+    torch.testing.assert_close(torch.from_numpy(stats["mean"]), torch.tensor([1.5, 25.0]))
+    assert stats["count"].item() == 4

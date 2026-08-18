@@ -19,7 +19,6 @@ import logging
 
 import numpy as np
 
-from lerobot.processor import RelativeActionsProcessorStep
 from lerobot.utils.constants import ACTION, OBS_STATE
 
 from .io_utils import load_image_as_numpy
@@ -676,6 +675,24 @@ def _compute_relative_chunk_batch(
     return chunks.reshape(-1, all_actions.shape[1])
 
 
+def _build_relative_action_mask(
+    action_dim: int,
+    action_names: list[str] | None,
+    exclude_joints: list[str],
+) -> np.ndarray:
+    if not exclude_joints or action_names is None:
+        return np.ones(action_dim, dtype=np.float32)
+
+    exclude_tokens = [str(name).lower() for name in exclude_joints if name]
+    mask = [
+        not any(token == action_name or token in action_name for token in exclude_tokens)
+        for name in action_names[:action_dim]
+        for action_name in [str(name).lower()]
+    ]
+    mask.extend([True] * (action_dim - len(mask)))
+    return np.asarray(mask, dtype=np.float32)
+
+
 def compute_relative_action_stats(
     hf_dataset,
     features: dict,
@@ -713,12 +730,11 @@ def compute_relative_action_stats(
 
     action_dim = features[ACTION]["shape"][0]
     action_names = features.get(ACTION, {}).get("names")
-    mask_step = RelativeActionsProcessorStep(
-        enabled=True,
-        exclude_joints=exclude_joints,
-        action_names=action_names,
+    relative_mask = _build_relative_action_mask(
+        action_dim,
+        action_names,
+        exclude_joints,
     )
-    relative_mask = np.array(mask_step._build_mask(action_dim), dtype=np.float32)
 
     logging.info("Loading action/state data for relative action stats...")
     all_actions = np.array(hf_dataset[ACTION], dtype=np.float32)

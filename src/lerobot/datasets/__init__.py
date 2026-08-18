@@ -20,6 +20,7 @@ from lerobot.utils.import_utils import require_package
 require_package("datasets", extra="dataset")
 require_package("av", extra="dataset")
 
+from .compute_stats import aggregate_stats
 from .dataset_metadata import CODEBASE_VERSION, LeRobotDatasetMetadata
 from .dataset_reader import DatasetReader
 from .lerobot_dataset import LeRobotDataset
@@ -30,6 +31,7 @@ __all__ = [
     "DatasetReader",
     "LeRobotDataset",
     "LeRobotDatasetMetadata",
+    "aggregate_stats",
     "check_video_encoder_parameters_pyav",
     "detect_available_encoders_pyav",
 ]

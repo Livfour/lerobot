@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Public API for lightweight, base-dependency-only utilities.
-
-Heavy cross-cutting modules (train_utils, control_utils) have been moved
-to ``lerobot.common``. ``visualization_utils`` remains here but is
-intentionally NOT re-exported to avoid pulling in optional dependencies.
-"""
+"""Public utilities used by the LeRobot data backend."""
 
 from .constants import (
     ACTION,
@@ -32,9 +26,6 @@ from .constants import (
     OBS_STR,
     REWARD,
 )
-from .decorators import check_if_already_connected, check_if_not_connected
-from .device_utils import auto_select_torch_device, get_safe_torch_device, is_torch_device_available
-from .errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 from .import_utils import is_package_available, require_package
 
 __all__ = [
@@ -49,17 +40,7 @@ __all__ = [
     "OBS_STATE",
     "OBS_STR",
     "REWARD",
-    # Device utilities
-    "auto_select_torch_device",
-    "get_safe_torch_device",
-    "is_torch_device_available",
     # Import guards
     "is_package_available",
     "require_package",
-    # Decorators
-    "check_if_already_connected",
-    "check_if_not_connected",
-    # Errors
-    "DeviceAlreadyConnectedError",
-    "DeviceNotConnectedError",
 ]

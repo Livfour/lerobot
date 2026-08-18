@@ -25,7 +25,7 @@ import packaging.version
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from huggingface_hub import snapshot_download, sync_bucket
+from huggingface_hub import snapshot_download
 from huggingface_hub.utils import WeakFileLock
 
 from lerobot.configs import DEPTH_METER_UNIT, VideoEncoderConfig
@@ -258,6 +258,8 @@ class LeRobotDatasetMetadata:
         token: str | bool | None = None,
     ) -> None:
         if self.repo_type == "bucket":
+            from huggingface_hub import sync_bucket
+
             self.root.mkdir(parents=True, exist_ok=True)
             sync_bucket(
                 f"hf://buckets/{self.repo_id}/meta",

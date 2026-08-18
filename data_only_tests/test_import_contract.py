@@ -33,6 +33,19 @@ def test_native_reader_import_is_isolated():
     assert not any(name.startswith(EXCLUDED_PREFIXES) for name in loaded)
 
 
+def test_native_reader_imports_without_bucket_sync_support():
+    _probe(
+        "import builtins; "
+        "real_import = builtins.__import__; "
+        "builtins.__import__ = lambda name, globals=None, locals=None, fromlist=(), level=0: "
+        "(_ for _ in ()).throw(ImportError('sync_bucket unavailable')) "
+        "if name == 'huggingface_hub' and fromlist and 'sync_bucket' in fromlist "
+        "else real_import(name, globals, locals, fromlist, level); "
+        "from lerobot.datasets import LeRobotDataset; "
+        "print('{}')"
+    )
+
+
 def test_transformers_and_lerobot_import_in_both_orders():
     if importlib.util.find_spec("transformers") is None:
         pytest.skip("transformers is not part of the data-only environment")

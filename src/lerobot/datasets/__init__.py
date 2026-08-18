@@ -23,10 +23,13 @@ require_package("av", extra="dataset")
 from .dataset_metadata import CODEBASE_VERSION, LeRobotDatasetMetadata
 from .dataset_reader import DatasetReader
 from .lerobot_dataset import LeRobotDataset
+from .pyav_utils import check_video_encoder_parameters_pyav, detect_available_encoders_pyav
 
 __all__ = [
     "CODEBASE_VERSION",
     "DatasetReader",
     "LeRobotDataset",
     "LeRobotDatasetMetadata",
+    "check_video_encoder_parameters_pyav",
+    "detect_available_encoders_pyav",
 ]

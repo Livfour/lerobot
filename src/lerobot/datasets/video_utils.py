@@ -48,6 +48,7 @@ from lerobot.configs import (
 from lerobot.utils.import_utils import get_safe_default_video_backend
 
 from .depth_utils import quantize_depth
+from .pyav_container_cache import acquire_video_stream
 from .pyav_utils import get_pix_fmt_channels
 
 logger = logging.getLogger(__name__)
@@ -144,15 +145,17 @@ def decode_video_frames_pyav(
     first_ts = min(timestamps)
     last_ts = max(timestamps)
 
-    loaded_frames: list[torch.Tensor] = []
+    loaded_frames: list[av.VideoFrame] = []
     loaded_ts: list[float] = []
 
     # Seek + decode. `container.seek(offset)` with no `stream` argument expects the offset in
     # av.time_base units (microseconds). `backward=True` lands us on the nearest keyframe at or
     # before `first_ts`, so we can then decode forward until we cover `last_ts`. See:
     # https://pyav.basswood-io.com/docs/stable/api/container.html#av.container.InputContainer.seek
-    with av.open(video_path) as container:
-        stream = container.streams.video[0]
+    #
+    # The container comes from a process-local cache instead of a fresh `av.open`: re-parsing the
+    # MP4 sample table of a long v3.0 file costs several times more than the decode itself.
+    with acquire_video_stream(video_path) as (container, stream):
         # Seek to the nearest keyframe at or before `first_ts` with a 1 frame margin
         container.seek(
             round(first_ts / stream.time_base) - 1,
@@ -161,22 +164,24 @@ def decode_video_frames_pyav(
             stream=stream,
         )
 
-        for frame in container.decode(stream):
-            if frame.pts is None:
-                continue
-            current_ts = float(frame.pts * stream.time_base)
-            if log_loaded_timestamps:
-                logger.info(f"frame loaded at timestamp={current_ts:.4f}")
-            if is_depth:
-                arr = frame.to_ndarray(format="gray12le")  # (H, W) uint12
-                loaded_frames.append(torch.from_numpy(arr).unsqueeze(0).contiguous())
-            else:
-                arr = frame.to_ndarray(format="rgb24")  # (H, W, 3)
-                # Convert to CHW uint8 to match torchcodec's output layout.
-                loaded_frames.append(torch.from_numpy(arr).permute(2, 0, 1).contiguous())
-            loaded_ts.append(current_ts)
-            if current_ts >= last_ts:
-                break
+        # Frames stay in their decoded (usually planar YUV) form until the nearest-neighbour
+        # match below picks the ones the caller asked for. Everything decoded on the way from the
+        # keyframe to `last_ts` would otherwise be colour-converted and copied for nothing.
+        packets = container.decode(stream)
+        try:
+            for frame in packets:
+                if frame.pts is None:
+                    continue
+                current_ts = float(frame.pts * stream.time_base)
+                if log_loaded_timestamps:
+                    logger.info(f"frame loaded at timestamp={current_ts:.4f}")
+                loaded_frames.append(frame)
+                loaded_ts.append(current_ts)
+                if current_ts >= last_ts:
+                    break
+        finally:
+            # Release the decoder generator explicitly; the container is shared and outlives it.
+            packets.close()
 
     if not loaded_frames:
         raise FrameTimestampError(
@@ -204,7 +209,23 @@ def decode_video_frames_pyav(
         )
 
     # get closest frames to the query timestamps
-    closest_frames = torch.stack([loaded_frames[idx] for idx in argmin_])
+    converted: dict[int, torch.Tensor] = {}
+
+    def _as_tensor(index: int) -> torch.Tensor:
+        tensor = converted.get(index)
+        if tensor is None:
+            frame = loaded_frames[index]
+            if is_depth:
+                arr = frame.to_ndarray(format="gray12le")  # (H, W) uint12
+                tensor = torch.from_numpy(arr).unsqueeze(0).contiguous()
+            else:
+                arr = frame.to_ndarray(format="rgb24")  # (H, W, 3)
+                # Convert to CHW uint8 to match torchcodec's output layout.
+                tensor = torch.from_numpy(arr).permute(2, 0, 1).contiguous()
+            converted[index] = tensor
+        return tensor
+
+    closest_frames = torch.stack([_as_tensor(int(idx)) for idx in argmin_])
     closest_ts = loaded_ts_t[argmin_]
 
     if log_loaded_timestamps:

@@ -15,6 +15,8 @@
 # limitations under the License.
 """Private reader component for LeRobotDataset. Handles random-access reading (HF dataset, delta indices, video decoding)."""
 
+import os
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -40,6 +42,27 @@ from .io_utils import (
     load_nested_dataset,
 )
 from .video_utils import decode_video_frames
+
+_decode_pool_lock = threading.Lock()
+_decode_pool_state: tuple[int, int, ThreadPoolExecutor] | None = None
+
+
+def _decode_pool(num_workers: int) -> ThreadPoolExecutor:
+    """Return this process's video-decode pool, sized for ``num_workers`` cameras.
+
+    A dataloader worker decodes one window per camera per item, so the pool is
+    created once and kept. It is keyed by pid as well: a forked worker must not
+    submit work to threads that only exist in its parent.
+    """
+    global _decode_pool_state
+    pid = os.getpid()
+    with _decode_pool_lock:
+        state = _decode_pool_state
+        if state is not None and state[0] == pid and state[1] >= num_workers:
+            return state[2]
+        pool = ThreadPoolExecutor(max_workers=num_workers, thread_name_prefix="lerobot-decode")
+        _decode_pool_state = (pid, num_workers, pool)
+        return pool
 
 
 class DatasetReader:
@@ -304,10 +327,12 @@ class DatasetReader:
         if len(items) <= 1:
             return {vid_key: _decode_single(vid_key, query_ts)[1] for vid_key, query_ts in items}
 
-        # Multi-camera: decode in parallel (video decoding releases the GIL)
-        with ThreadPoolExecutor(max_workers=len(items)) as pool:
-            futures = [pool.submit(_decode_single, k, ts) for k, ts in items]
-            return dict(f.result() for f in futures)
+        # Multi-camera: decode in parallel (video decoding releases the GIL). The pool is
+        # process-local and reused, because spawning one per frame costs about as much as the
+        # decode it parallelises once containers are cached.
+        pool = _decode_pool(len(items))
+        futures = [pool.submit(_decode_single, k, ts) for k, ts in items]
+        return dict(f.result() for f in futures)
 
     def get_item(self, idx) -> dict:
         """Core __getitem__ logic. Assumes hf_dataset is loaded.

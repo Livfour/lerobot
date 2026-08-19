@@ -105,6 +105,92 @@ def decode_video_frames(
         raise ValueError(f"Unsupported video backend: {backend}")
 
 
+WALK_INSTEAD_OF_SEEK_FRAMES = 4
+"""How far the decoder will walk forward before it seeks to the next timestamp instead.
+
+A training window asks for frames that are strides apart — `[k, k+8]` for an
+8-frame action horizon — and decoding straight through the gap costs one decode
+per frame in between. Seeking instead lands within a GOP of the target, so the
+break-even point is roughly the GOP size; a small constant beats it in both
+directions without needing to know the GOP.
+"""
+
+
+def _decode_at_timestamps(
+    container: Any,
+    stream: Any,
+    timestamps: list[float],
+    log_loaded_timestamps: bool = False,
+) -> tuple[list[Any], list[float]]:
+    """Decode the frames bracketing each requested timestamp, and nothing else.
+
+    Returns the decoded frames with their timestamps, in decode order. Frames stay
+    in their decoded (usually planar YUV) form; the caller colour-converts only the
+    ones its nearest-neighbour match selects.
+
+    For each target this keeps the last frame before it and the first frame at or
+    after it, so the caller sees both nearest-neighbour candidates — the same
+    frames a straight walk would have offered, without the ones in between.
+    """
+    frames: list[Any] = []
+    frame_ts: list[float] = []
+    seen: set[int] = set()
+    position: float | None = None  # timestamp of the last frame decoded
+    packets = None
+
+    def keep(frame: Any, ts: float) -> None:
+        if frame.pts in seen:
+            return
+        seen.add(frame.pts)
+        frames.append(frame)
+        frame_ts.append(ts)
+        if log_loaded_timestamps:
+            logger.info(f"frame loaded at timestamp={ts:.4f}")
+
+    rate = float(stream.average_rate) if stream.average_rate else 0.0
+
+    try:
+        for target in sorted(set(timestamps)):
+            # Already walked past this target: the frame at `position` and the one before it
+            # are both kept, so this target is bracketed and needs no decoding.
+            if position is not None and position >= target:
+                continue
+
+            # Reuse the open decoder when the target is close; seek when walking to it would
+            # cost more decodes than a seek plus the GOP it lands in.
+            ahead = 0.0 if position is None else (target - position) * rate
+            if packets is None or position is None or ahead > WALK_INSTEAD_OF_SEEK_FRAMES:
+                if packets is not None:
+                    packets.close()
+                container.seek(
+                    round(target / stream.time_base) - 1,
+                    backward=True,
+                    any_frame=False,
+                    stream=stream,
+                )
+                packets = container.decode(stream)
+                position = None
+
+            reached = False
+            for frame in packets:
+                if frame.pts is None:
+                    continue
+                ts = float(frame.pts * stream.time_base)
+                position = ts
+                keep(frame, ts)
+                if ts >= target:
+                    reached = True
+                    break
+            if not reached:
+                # Ran off the end of the stream; later targets cannot do better.
+                break
+    finally:
+        if packets is not None:
+            packets.close()
+
+    return frames, frame_ts
+
+
 def decode_video_frames_pyav(
     video_path: Path | str,
     timestamps: list[float],
@@ -140,48 +226,13 @@ def decode_video_frames_pyav(
     # TODO(rcadene): also load audio stream at the same time
     video_path = str(video_path)
 
-    # set the first and last requested timestamps
-    # Note: previous timestamps are usually loaded, since we need to access the previous key frame
     first_ts = min(timestamps)
     last_ts = max(timestamps)
 
-    loaded_frames: list[av.VideoFrame] = []
-    loaded_ts: list[float] = []
-
-    # Seek + decode. `container.seek(offset)` with no `stream` argument expects the offset in
-    # av.time_base units (microseconds). `backward=True` lands us on the nearest keyframe at or
-    # before `first_ts`, so we can then decode forward until we cover `last_ts`. See:
-    # https://pyav.basswood-io.com/docs/stable/api/container.html#av.container.InputContainer.seek
-    #
     # The container comes from a process-local cache instead of a fresh `av.open`: re-parsing the
     # MP4 sample table of a long v3.0 file costs several times more than the decode itself.
     with acquire_video_stream(video_path) as (container, stream):
-        # Seek to the nearest keyframe at or before `first_ts` with a 1 frame margin
-        container.seek(
-            round(first_ts / stream.time_base) - 1,
-            backward=True,
-            any_frame=False,
-            stream=stream,
-        )
-
-        # Frames stay in their decoded (usually planar YUV) form until the nearest-neighbour
-        # match below picks the ones the caller asked for. Everything decoded on the way from the
-        # keyframe to `last_ts` would otherwise be colour-converted and copied for nothing.
-        packets = container.decode(stream)
-        try:
-            for frame in packets:
-                if frame.pts is None:
-                    continue
-                current_ts = float(frame.pts * stream.time_base)
-                if log_loaded_timestamps:
-                    logger.info(f"frame loaded at timestamp={current_ts:.4f}")
-                loaded_frames.append(frame)
-                loaded_ts.append(current_ts)
-                if current_ts >= last_ts:
-                    break
-        finally:
-            # Release the decoder generator explicitly; the container is shared and outlives it.
-            packets.close()
+        loaded_frames, loaded_ts = _decode_at_timestamps(container, stream, timestamps, log_loaded_timestamps)
 
     if not loaded_frames:
         raise FrameTimestampError(

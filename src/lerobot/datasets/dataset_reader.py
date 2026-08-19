@@ -47,6 +47,16 @@ _decode_pool_lock = threading.Lock()
 _decode_pool_state: tuple[int, int, ThreadPoolExecutor] | None = None
 
 
+def _decode_cameras_in_parallel() -> bool:
+    """Whether one item's cameras are decoded concurrently. Off by default."""
+    return os.environ.get("LEROBOT_DECODE_PARALLEL_CAMERAS", "0").strip().lower() not in (
+        "",
+        "0",
+        "false",
+        "no",
+    )
+
+
 def _decode_pool(num_workers: int) -> ThreadPoolExecutor:
     """Return this process's video-decode pool, sized for ``num_workers`` cameras.
 
@@ -323,13 +333,15 @@ class DatasetReader:
 
         items = list(query_timestamps.items())
 
-        # Single camera: no threading overhead
-        if len(items) <= 1:
+        # Decoding one camera at a time is the right default under a dataloader: the
+        # parallelism that matters is across samples, and every extra decode thread is one
+        # more runnable thread competing with the training process for the same cores. On a
+        # 96-core node with 12 workers per rank, threading here put ~100 threads on the run
+        # queue and slowed the training step itself. Set LEROBOT_DECODE_PARALLEL_CAMERAS=1
+        # to decode cameras concurrently instead (worth it only when reads are the bottleneck).
+        if len(items) <= 1 or not _decode_cameras_in_parallel():
             return {vid_key: _decode_single(vid_key, query_ts)[1] for vid_key, query_ts in items}
 
-        # Multi-camera: decode in parallel (video decoding releases the GIL). The pool is
-        # process-local and reused, because spawning one per frame costs about as much as the
-        # decode it parallelises once containers are cached.
         pool = _decode_pool(len(items))
         futures = [pool.submit(_decode_single, k, ts) for k, ts in items]
         return dict(f.result() for f in futures)

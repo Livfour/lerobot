@@ -59,7 +59,7 @@ test = ["pytest>=8.1.0,<10.0.0"]
 [project.urls]
 homepage = "https://huggingface.co/lerobot"
 documentation = "https://huggingface.co/docs/lerobot/index"
-source = "https://github.com/Livfour/lerobot/tree/agent/data-only-py311-v0.6.1"
+source = "https://github.com/Livfour/lerobot"
 upstream = "https://github.com/huggingface/lerobot/tree/v0.6.1"
 
 [[tool.uv.index]]
@@ -80,6 +80,12 @@ include = [
     "lerobot.scripts",
     "lerobot.utils",
 ]
+
+[tool.setuptools.package-data]
+"lerobot.datasets" = ["card_template.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py311"

@@ -467,8 +467,9 @@ class LeRobotDatasetMetadata:
         (``apply_chat_template(messages, tools=meta.tools)``) keep
         working out of the box.
 
-        Implementations live under :mod:`lerobot.tools` (one file per
-        tool); see ``docs/source/tools.mdx`` for the authoring guide.
+        Tool implementations and the authoring guide live upstream
+        (`lerobot.tools`, `docs/source/tools.mdx`); this data-only fork
+        only reads the schemas a dataset declares.
         """
         declared = self.info.tools
         if declared:

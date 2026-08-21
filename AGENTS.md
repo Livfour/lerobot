@@ -1,57 +1,69 @@
-This file provides guidance to AI agents when working with code in this repository.
+# AGENTS.md
 
-> **User-facing help → [`AGENT_GUIDE.md`](./AGENT_GUIDE.md)** (SO-101 setup, recording, picking a policy, training duration, eval — with copy-pasteable commands).
+Guidance for AI agents working in this repository.
 
-## Project Overview
+## What this repo is
 
-LeRobot is a PyTorch-based library for real-world robotics, providing datasets, pretrained policies, and tools for training, evaluation, data collection, and robot control. It integrates with Hugging Face Hub for model/dataset sharing.
+A data-only fork of [huggingface/lerobot](https://github.com/huggingface/lerobot) `v0.6.1`,
+trimmed to the LeRobotDataset read/write path and backported to Python 3.11. It is consumed
+by [VLAForge](https://github.com/Livfour/VLAForge) as `submodules/lerobot`, pinned by gitlink
+to one tested commit. Read [`README.md`](./README.md) first — it states the layout and the
+upstream relationship.
 
-## Tech Stack
+## The one rule
 
-Python 3.12+ · PyTorch · Hugging Face (datasets, Hub, accelerate) · draccus (config/CLI) · Gymnasium (envs) · uv (package management)
+**This fork carries a compatibility patch, not a reimplementation.** Do not add a
+replacement metadata parser, Parquet reader, video decoder, window implementation, or any
+VLAForge-specific sample adapter here — that code belongs in VLAForge. Allowed changes are
+listed under "Relationship to upstream" in the README; anything else makes the next upstream
+rebase unreviewable.
 
-## Development Setup
+Corollary: do not re-add policies, robots, motors, cameras, teleoperators, envs, processor,
+RL, or training code. They were deleted deliberately.
+
+## Layout
+
+- `src/lerobot/datasets/` — the read/write path. `lerobot_dataset.py` (`LeRobotDataset`),
+  `dataset_metadata.py` (`LeRobotDatasetMetadata`), `dataset_reader.py` (delta-timestamp
+  windows, padding masks), `dataset_writer.py`, `compute_stats.py`, `video_utils.py` +
+  `pyav_utils.py` + `pyav_container_cache.py` (decoding).
+- `src/lerobot/configs/` — feature types and video-encoder configs the dataset path needs.
+- `src/lerobot/utils/` — constants, import guards, IO helpers.
+- `src/lerobot/scripts/convert_dataset_v21_to_v30.py` — upstream's converter, kept because
+  VLAForge's export flow ends with it.
+- `tests/` — the fork's own suite. Flat, no `__init__.py`; helpers import as
+  `from fixture_contract import ...`, which works because pytest puts the test dir on
+  `sys.path`.
+- `pyproject.toml` — single source of truth for deps, packaging, and ruff config.
+
+## Commands
 
 ```bash
-uv sync --locked                            # Base dependencies
-uv sync --locked --extra test --extra dev   # Test + dev tools
-uv sync --locked --extra all                # Everything
-git lfs install && git lfs pull             # Test artifacts
+uv sync --locked --extra test                              # set up
+uv run python tests/create_v30_fixture.py --root /tmp/fix  # build the test fixture
+LEROBOT_V30_FIXTURE=/tmp/fix uv run pytest -q              # test
+pre-commit run --all-files                                 # lint + format (ruff)
 ```
 
-## Key Commands
+Every test but `test_import_contract.py` needs `LEROBOT_V30_FIXTURE`; without it they fail
+rather than skip, so an "everything is broken" run usually just means you forgot the fixture.
+Prefer `uv run` over bare `python` / `pip`.
 
-```bash
-uv run pytest tests -svv --maxfail=10                 # All tests
-DEVICE=cuda make test-end-to-end                      # All E2E tests
-pre-commit run --all-files                           # Lint + format (ruff, typos, bandit, etc.)
-```
+## Conventions
 
-## Architecture (`src/lerobot/`)
+- Python 3.11 floor. No 3.12-only syntax (`type X = ...`, PEP 695 generics).
+- Imports: relative (`from .sibling import X`) within a module, absolute
+  (`from lerobot.module import X`) across modules.
+- Guard optional dependencies with the `_foo_available` flags in `utils/import_utils.py`
+  plus a `require_package(...)` at use time; don't call `is_package_available` directly.
+- Ruff, line length 110, double quotes. Run it before committing.
 
-- **`scripts/`** — CLI entry points (`lerobot-train`, `lerobot-eval`, `lerobot-record`, etc.), mapped in `pyproject.toml [project.scripts]`.
-- **`configs/`** — Dataclass configs parsed by draccus. `train.py` has `TrainPipelineConfig` (top-level). `policies.py` has `PreTrainedConfig` base. Polymorphism via `draccus.ChoiceRegistry` with `@register_subclass("name")` decorators.
-- **`policies/`** — Each policy in its own subdir. All inherit `PreTrainedPolicy` (`nn.Module` + `HubMixin`) from `pretrained.py`. Factory with lazy imports in `factory.py`.
-- **`processor/`** — Data transformation pipeline. `ProcessorStep` base with registry. `DataProcessorPipeline` / `PolicyProcessorPipeline` chain steps.
-- **`datasets/`** — `LeRobotDataset` (episode-aware sampling + video decoding) and `LeRobotDatasetMetadata`.
-- **`envs/`** — `EnvConfig` base in `configs.py`, factory in `factory.py`. Each env subclass defines `gym_kwargs` and `create_envs()`.
-- **`robots/`, `motors/`, `cameras/`, `teleoperators/`** — Hardware abstraction layers.
-- **`types.py`** and **`configs/types.py`** — Core type aliases and feature type definitions.
+## Before you commit
 
-## Repository Structure (outside `src/`)
+Run the suite as shown above. `tests/test_import_contract.py` is the load-bearing one: it
+asserts that importing `lerobot.datasets` pulls in no policy/robot/env module, that the
+installed distribution declares no non-data dependency, and that the v2.1 → v3.0 converter
+stays importable. If a change makes it fail, the change is out of charter.
 
-- **`tests/`** — Pytest suite organized by module. Fixtures in `tests/fixtures/`, mocks in `tests/mocks/`. Hardware tests use skip decorators from `tests/utils.py`. E2E tests via `Makefile` write to `tests/outputs/`.
-- **`.github/workflows/`** — CI: `quality.yml` (pre-commit), `fast_tests.yml` (base deps, every PR), `full_tests.yml` (all extras + E2E + GPU, post-approval), `latest_deps_tests.yml` (daily lockfile upgrade), `security.yml` (TruffleHog), `release.yml` (PyPI publish on tags).
-- **`docs/source/`** — HF documentation (`.mdx` files). Per-policy READMEs, hardware guides, tutorials. Built separately via `docs-requirements.txt` and CI workflows.
-- **`examples/`** — End-user tutorials and scripts organized by use case (dataset creation, training, hardware setup).
-- **`docker/`** — Dockerfiles for user (`Dockerfile.user`) and CI (`Dockerfile.internal`).
-- **`benchmarks/`** — Performance benchmarking scripts.
-- **Root files**: `pyproject.toml` (single source of truth for deps, build, tool config), `Makefile` (E2E test targets), `uv.lock`, `CONTRIBUTING.md` & `README.md` (general information).
-
-## Notes
-
-- **Mypy is gradual**: strict only for `lerobot.envs`, `lerobot.configs`, `lerobot.optim`, `lerobot.model`, `lerobot.cameras`, `lerobot.motors`, `lerobot.transport`. Add type annotations when modifying these modules.
-- **Imports**: prefer top-level imports; relative (`from .sibling import X`) across sibling files within a module, absolute (`from lerobot.module import X`) across modules.
-- **Optional dependencies**: many policies, envs, and robots are behind extras (e.g., `lerobot[aloha]`, see `pyproject.toml`). Guard optional imports with `TYPE_CHECKING or _foo_available` at module top + a `require_package(...)` check at use time. Reuse the `_foo_available` flags in `utils/import_utils.py`; don't call `is_package_available`.
-- **Video decoding**: datasets can store observations as video files. `LeRobotDataset` handles frame extraction, but tests need ffmpeg installed.
-- **Prioritize use of `uv run`** to execute Python commands (not raw `python` or `pip`).
+Any commit here is a submodule bump in VLAForge. Say what moved and why in the message; the
+VLAForge side has to justify the gitlink change.

@@ -193,9 +193,9 @@ def validate_camera_field(style: str | None, camera: str | None) -> None:
 # Tools declared on a dataset live in ``meta/info.json["tools"]`` as a list
 # of OpenAI-style function schemas. The runtime / training stack reads them
 # through :class:`LeRobotDatasetMetadata.tools` (with these constants as
-# fallback when the dataset doesn't declare any). Implementations live
-# under :mod:`lerobot.tools` (one file per tool); see
-# ``docs/source/tools.mdx`` for the authoring guide.
+# fallback when the dataset doesn't declare any). Tool implementations and
+# the authoring guide live upstream (`lerobot.tools`, `docs/source/tools.mdx`);
+# this data-only fork only reads the schemas a dataset declares.
 
 SAY_TOOL_SCHEMA: dict = {
     "type": "function",
